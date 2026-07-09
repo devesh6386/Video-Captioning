@@ -53,10 +53,11 @@ def get_allowed_origins():
     
     # Default origins based on environment
     if environment == "production":
-        # Production: Allow only specific domains
+        # Production: Allow Vercel deployment and common domains
         default_origins = [
-            "https://video-captioning.vercel.app",  # Example Vercel domain
-            "https://captionai.example.com",         # Example custom domain
+            "https://video-captioning.vercel.app",
+            "https://video-captioning-two.vercel.app",  # Your actual Vercel domain
+            "https://captionai.example.com",
         ]
     elif environment == "staging":
         default_origins = [

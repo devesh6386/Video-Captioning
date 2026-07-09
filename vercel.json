@@ -12,7 +12,7 @@
   "redirects": [
     {
       "source": "/api/:path*",
-      "destination": "https://video-captioning-api.onrender.com/api/:path*",
+      "destination": "https://video-captioning-kurh.onrender.com/api/:path*",
       "permanent": false
     }
   ]
