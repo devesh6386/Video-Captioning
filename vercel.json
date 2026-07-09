@@ -9,11 +9,10 @@
       "required": true
     }
   },
-  "redirects": [
+  "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://video-captioning-kurh.onrender.com/api/:path*",
-      "permanent": false
+      "destination": "https://video-captioning-kurh.onrender.com/api/:path*"
     }
   ]
 }
