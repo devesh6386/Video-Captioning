@@ -187,14 +187,28 @@ def generate_captions(frame_paths: list[str], styles: list[str] | None = None) -
     """
     Call Gemini to analyze frames and generate all requested captions
     in a single API call using responseSchema for structured output.
+    
+    Args:
+        frame_paths: List of paths to JPEG frame files
+        styles: Caption styles to generate (default: all 4 styles)
+    
+    Returns:
+        Dict with 'captions' and 'video_understanding' keys
+    
+    Raises:
+        ValueError: If GEMINI_API_KEY is not set or no frames provided
+        RuntimeError: If Gemini API fails after all retries
     """
     if styles is None:
         styles = STYLES
 
     if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not set")
+        error_msg = "GEMINI_API_KEY environment variable is not set"
+        logger.error(f"✗ {error_msg}")
+        raise ValueError(error_msg)
 
     if not frame_paths:
+        logger.warning("No frame paths provided")
         return {"captions": {s: "" for s in styles}, "video_understanding": {}}
 
     url = (
@@ -212,7 +226,12 @@ def generate_captions(frame_paths: list[str], styles: list[str] | None = None) -
             parts.append(part)
             encoded_count += 1
 
-    logger.info(f"Sending {encoded_count} frames to Gemini ({GEMINI_MODEL})")
+    if encoded_count == 0:
+        error_msg = "Could not encode any frames for Gemini"
+        logger.error(f"✗ {error_msg}")
+        raise ValueError(error_msg)
+
+    logger.info(f"📤 Sending {encoded_count} frames to Gemini ({GEMINI_MODEL})")
 
     payload = {
         "contents": [{"parts": parts}],
@@ -227,8 +246,11 @@ def generate_captions(frame_paths: list[str], styles: list[str] | None = None) -
 
     # Retry loop
     delay = INITIAL_DELAY
+    last_error = None
+    
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
+            logger.debug(f"Gemini API call attempt {attempt}/{MAX_ATTEMPTS}...")
             response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
 
             if response.status_code == 200:
@@ -238,7 +260,7 @@ def generate_captions(frame_paths: list[str], styles: list[str] | None = None) -
                 parsed = json.loads(cleaned)
                 if isinstance(parsed, dict):
                     result = _validate_and_patch(parsed, styles)
-                    logger.info(f"Gemini succeeded on attempt {attempt}")
+                    logger.info(f"✓ Gemini succeeded with {len(parsed.get('captions', {}))} styles")
                     return result
                 raise ValueError("Gemini returned non-dict JSON")
 
@@ -247,21 +269,38 @@ def generate_captions(frame_paths: list[str], styles: list[str] | None = None) -
                 if response.status_code == 429:
                     retry_after = response.headers.get("Retry-After")
                     wait = float(retry_after) if retry_after else RATE_LIMIT_DELAY
-                    logger.warning(f"429 rate limit. Waiting {wait:.0f}s...")
+                    logger.warning(f"⏳ Rate limited (429). Waiting {wait:.0f}s before retry...")
                 else:
-                    logger.warning(f"HTTP {response.status_code}, retrying in {wait:.1f}s...")
+                    logger.warning(f"⏳ Server error (HTTP {response.status_code}). Retry {attempt + 1}/{MAX_ATTEMPTS} in {wait:.1f}s...")
                 time.sleep(wait)
                 delay *= 2.0
                 continue
 
+            error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+            logger.error(f"✗ Gemini API error: {error_msg}")
             response.raise_for_status()
 
         except requests.RequestException as exc:
+            last_error = exc
             if attempt < MAX_ATTEMPTS:
-                logger.warning(f"Request failed (attempt {attempt}): {exc}. Retrying in {delay:.1f}s...")
+                logger.warning(f"⏳ Connection error (attempt {attempt}/{MAX_ATTEMPTS}): {str(exc)[:100]}. Retrying in {delay:.1f}s...")
                 time.sleep(delay)
                 delay *= 2.0
             else:
-                raise RuntimeError(f"Gemini API failed after {MAX_ATTEMPTS} attempts: {exc}") from exc
+                error_msg = f"Network error after {MAX_ATTEMPTS} attempts: {exc}"
+                logger.error(f"✗ {error_msg}")
+                raise RuntimeError(error_msg) from exc
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            logger.error(f"✗ Failed to parse Gemini response: {exc}")
+            raise RuntimeError(f"Invalid JSON from Gemini: {exc}") from exc
+        except Exception as exc:
+            last_error = exc
+            logger.error(f"✗ Unexpected error: {exc}", exc_info=True)
+            raise
 
-    raise RuntimeError(f"Gemini API did not succeed after {MAX_ATTEMPTS} attempts")
+    error_msg = f"Gemini API failed after {MAX_ATTEMPTS} attempts"
+    if last_error:
+        error_msg += f": {last_error}"
+    logger.error(f"✗ {error_msg}")
+    raise RuntimeError(error_msg)

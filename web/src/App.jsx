@@ -1,10 +1,11 @@
-import { useState, useCallback, lazy, Suspense } from "react";
+import { useState, useCallback, lazy, Suspense, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Header from "./components/Header";
 import DragDropZone from "./components/DragDropZone";
 import LoadingState from "./components/LoadingState";
 import ResultsDashboard from "./components/ResultsDashboard";
 import FeatureStrip from "./components/FeatureStrip";
+import { getEndpoint, validateCaptionResponse } from "./api/client.js";
 
 const SceneBackground = lazy(() => import("./components/SceneBackground"));
 
@@ -23,12 +24,34 @@ export default function App() {
   const [captions, setCaptions] = useState(null);
   const [fileName, setFileName] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [errorDetails, setErrorDetails] = useState("");
+
+  // Check backend connectivity on mount
+  useEffect(() => {
+    const checkBackend = async () => {
+      try {
+        const endpoint = getEndpoint("/api/health");
+        console.log("[APP] Checking backend health at:", endpoint);
+        const response = await fetch(endpoint);
+        if (!response.ok) {
+          console.warn("[APP] Backend health check failed:", response.status);
+        } else {
+          const data = await response.json();
+          console.log("[APP] Backend is ready:", data);
+        }
+      } catch (error) {
+        console.warn("[APP] Backend not yet available:", error.message);
+      }
+    };
+    checkBackend();
+  }, []);
 
   const handleFileSelect = useCallback(async (file) => {
     setAppState("processing");
     setLoadingStep(0);
     setFileName(file.name);
     setErrorMsg("");
+    setErrorDetails("");
 
     const formData = new FormData();
     formData.append("video", file);
@@ -41,7 +64,11 @@ export default function App() {
     ];
 
     try {
-      const response = await fetch("/api/caption", {
+      console.log("[APP] Uploading video:", file.name);
+      const endpoint = getEndpoint("/api/caption");
+      console.log("[APP] Using endpoint:", endpoint);
+
+      const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -49,17 +76,57 @@ export default function App() {
       stepTimers.forEach(clearTimeout);
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || `Server error: ${response.status}`);
+        let errorDetail = `Server error: ${response.status}`;
+        try {
+          const errData = await response.json();
+          errorDetail = errData.detail || errorDetail;
+        } catch (e) {
+          console.error("[APP] Failed to parse error response:", e);
+        }
+        throw new Error(errorDetail);
       }
 
       const data = await response.json();
+      console.log("[APP] Response received:", data);
+
+      // Validate response structure
+      try {
+        validateCaptionResponse(data);
+      } catch (validationError) {
+        console.error("[APP] Response validation failed:", validationError);
+        throw validationError;
+      }
+
       setCaptions(data.captions || {});
       setAppState("results");
+      console.log("[APP] Caption generation succeeded");
     } catch (err) {
       stepTimers.forEach(clearTimeout);
-      console.error("Caption generation failed:", err);
-      setErrorMsg(err.message || "Something went wrong. Please try again.");
+      console.error("[APP] Caption generation failed:", err);
+      
+      // Parse error message and provide details
+      let userMessage = err.message || "Failed to generate captions";
+      let details = "";
+
+      if (err.message.includes("Network Error")) {
+        userMessage = "Cannot connect to the backend server";
+        details = "Make sure the backend is running. Check environment variables.";
+      } else if (err.message.includes("Invalid response")) {
+        userMessage = "Invalid response from server";
+        details = err.message;
+      } else if (err.status === 413) {
+        userMessage = "Video file is too large";
+        details = "Maximum file size is 100MB";
+      } else if (err.status === 400) {
+        userMessage = "Invalid video format";
+        details = "Supported formats: MP4, WebM, MOV";
+      } else if (err.status >= 500) {
+        userMessage = "Server error occurred";
+        details = `Server responded with: ${err.message}`;
+      }
+
+      setErrorMsg(userMessage);
+      setErrorDetails(details);
       setAppState("error");
     }
   }, []);
@@ -69,6 +136,7 @@ export default function App() {
     setCaptions(null);
     setFileName("");
     setErrorMsg("");
+    setErrorDetails("");
     setLoadingStep(0);
   }, []);
 
@@ -152,9 +220,16 @@ export default function App() {
                     <span className="text-3xl">✕</span>
                   </div>
                   <h2 className="text-xl font-bold text-on-surface mb-2">
-                    Something Went Wrong
+                    {errorMsg || "Something Went Wrong"}
                   </h2>
-                  <p className="text-on-surface-variant text-sm mb-6">{errorMsg}</p>
+                  {errorDetails && (
+                    <p className="text-on-surface-variant text-xs mb-4 p-3 bg-surface-bright rounded border border-outline/20 font-mono">
+                      {errorDetails}
+                    </p>
+                  )}
+                  <p className="text-on-surface-variant text-sm mb-6">
+                    Please try again or contact support if the issue persists.
+                  </p>
                   <button
                     onClick={handleReset}
                     className="px-6 py-3 rounded-xl font-medium gradient-primary text-white magnetic-btn

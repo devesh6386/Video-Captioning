@@ -1,18 +1,35 @@
-# Environment Variables & Secrets
+# Environment Variables & Secrets (NEVER commit these!)
 .env
 .env.local
-.env.*
+.env.*.local
 *.env
+.env.*
 
 # IDE / Editor configurations
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-*
+
+# Frontend Build & Dependencies
+node_modules/
+web/dist/
+web/build/
+.next/
+dist/
+build/
+
+# Frontend Package Manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Project Specific Data & Video Media
 data/clips/
 data/outputs/
+data/temp/
+uploads/
 
 # Python Runtime & Caching
 __pycache__/
@@ -20,6 +37,9 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .python-version
+*.egg-info/
+dist/
+build/
 
 # Virtual Environments
 .venv/
@@ -29,4 +49,21 @@ env/
 
 # Operating System Files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Temporary Files
+*.tmp
+*.log
+*.swp
+*.swo
+*~
+
+# IDE Specific
+.vscode/settings.json
+.idea/workspace.xml
+*.sublime-workspace

@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: video-captioning-api
+    runtime: python
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: cd api && uvicorn main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: GEMINI_API_KEY
+        sync: false
+        scope: runtime
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: FRAME_COUNT
+        value: "5"
+      - key: ENABLE_SCENE_DETECTION
+        value: "true"
+      - key: ENVIRONMENT
+        value: production
+      - key: CORS_ORIGINS
+        sync: false
+        scope: runtime
+    healthCheckPath: /api/health
+    disk:
+      - path: /app/data
+        sizeGB: 1
